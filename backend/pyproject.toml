@@ -1,0 +1,45 @@
+[project]
+name = "personal-finance-backend"
+version = "1.0.0"
+description = "Personal Finance and Expense Intelligence System API"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "python-multipart>=0.0.20",
+    "email-validator>=2.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "httpx>=0.28",
+    "ruff>=0.9",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --disable-warnings"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# Generated Alembic revisions are kept verbatim so autogenerate diffs stay stable.
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# UP042/UP046/UP047 are Python 3.12 modernizations that change enum and generic
+# runtime semantics; the current forms are intentional and already type-safe.
+ignore = ["B008", "UP042", "UP046", "UP047"]
+
+[tool.uv]
+package = false
