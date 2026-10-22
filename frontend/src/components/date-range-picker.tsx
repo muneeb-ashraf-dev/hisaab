@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { CalendarRange } from "lucide-react";
+import { CalendarRange, ChevronDown } from "lucide-react";
 
 import { NativeSelect } from "@/components/select-field";
 import type { DateRange } from "@/lib/hooks";
@@ -63,16 +63,19 @@ export function DateRangePicker({
     <div className={cn("flex flex-wrap items-center gap-2", className)}>
       <div className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1 shadow-xs">
         <CalendarRange className="size-3.5 text-muted-foreground" />
-        <NativeSelect
-          aria-label="Date range preset"
-          value={activePreset}
-          onChange={(next) => {
-            const preset = presets.find((item) => item.value === next);
-            if (preset) onChange(preset.range);
-          }}
-          options={[...presets.map(({ value: v, label }) => ({ value: v, label })), { value: "custom", label: "Custom range" }]}
-          className="h-7 w-[132px] border-0 bg-transparent px-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
-        />
+        <div className="relative">
+          <NativeSelect
+            aria-label="Date range preset"
+            value={activePreset}
+            onChange={(next) => {
+              const preset = presets.find((item) => item.value === next);
+              if (preset) onChange(preset.range);
+            }}
+            options={[...presets.map(({ value: v, label }) => ({ value: v, label })), { value: "custom", label: "Custom range" }]}
+            className="h-7 w-[160px] appearance-none border-0 bg-none bg-transparent py-0 pl-1 pr-7 shadow-none focus-visible:ring-0 dark:bg-transparent"
+          />
+          <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        </div>
       </div>
       <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1 shadow-xs">
         <input

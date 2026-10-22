@@ -166,7 +166,7 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
         <div className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
           <span className="font-medium text-foreground">Hisaab</span>
           <span className="text-border">/</span>
-          <span>Single-user workspace</span>
+          <span>Muneeb's workspace</span>
         </div>
       </div>
       <div className="flex items-center gap-3">
@@ -177,7 +177,7 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
           {formatDate(new Date(), "EEEE, d MMM")}
         </span>
         <span className="flex size-8 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
-          A
+          M
         </span>
       </div>
     </div>
