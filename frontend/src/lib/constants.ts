@@ -51,6 +51,7 @@ export const NAV_ITEMS = [
   { href: "/budgets", label: "Budgets", icon: "Target", group: "Planning" },
   { href: "/goals", label: "Goals", icon: "Trophy", group: "Planning" },
   { href: "/recurring", label: "Recurring", icon: "CalendarClock", group: "Planning" },
+  { href: "/committees", label: "Committees", icon: "HandCoins", group: "Planning" },
   { href: "/import-export", label: "Import & Export", icon: "ArrowDownUp", group: "Data" },
   { href: "/settings", label: "Settings", icon: "Settings2", group: "Data" },
 ] as const;

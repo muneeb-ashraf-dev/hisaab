@@ -45,7 +45,7 @@ def backup_status(db: DbSession) -> BackupStatus:
 
 
 @router.post("/system/backup", response_model=BackupResult)
-def create_local_backup(db: DbSession) -> BackupResult:
+def create_supabase_backup(db: DbSession) -> BackupResult:
     return backup_service.create_backup(db)
 
 

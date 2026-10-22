@@ -454,8 +454,9 @@ function AccountsTab({ baselineDate }: { baselineDate?: string }) {
 
       <DefinitionNote>
         An account with ledger history cannot be deleted; deactivate it instead so past reports stay
-        intact. Opening balances for baseline accounts should be edited on the Baseline tab, which
-        keeps original funds, historical usage and the current balance reconciling.
+        intact. If you use a baseline snapshot, edit its accounts on the Baseline tab so original
+        funds, historical usage and the opening balance keep reconciling. Otherwise edit the opening
+        balance here.
       </DefinitionNote>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -1336,6 +1337,7 @@ function AuditTab() {
                 { value: "transfer", label: "Transfers" },
                 { value: "budget", label: "Budgets" },
                 { value: "goal", label: "Goals" },
+                { value: "committee", label: "Committees" },
                 { value: "recurring", label: "Recurring" },
                 { value: "baseline", label: "Baseline" },
                 { value: "import", label: "Imports" },
@@ -1431,7 +1433,7 @@ function BackupCard() {
     try {
       const result = await backupNow();
       const transactionCount = result.counts.transactions ?? 0;
-      toast.success("Local backup saved", {
+      toast.success("Supabase backup saved", {
         description: `${transactionCount} transactions copied to ${result.target_database} (${formatBytes(result.size_bytes)}).`,
       });
     } catch (backupError) {
@@ -1451,8 +1453,8 @@ function BackupCard() {
     <div className="surface p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <SectionHeading
-          title="Local backup"
-          description="Copy the shared database into this machine's PostgreSQL database for recovery."
+          title="Supabase backup"
+          description="Copy the main local PostgreSQL database to Supabase for off-site recovery."
         />
         <div className="flex items-center gap-2">
           <Pill className={stateTone}>
@@ -1476,12 +1478,12 @@ function BackupCard() {
       </div>
 
       <p className="mt-3 text-xs leading-5 text-muted-foreground">
-        {error ?? data?.message ?? "Checking the local backup status…"}
+        {error ?? data?.message ?? "Checking the Supabase backup status…"}
       </p>
 
       <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
-          <dt className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Source</dt>
+          <dt className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Main database</dt>
           <dd className="mt-1 truncate text-xs font-medium">
             {data?.source_host
               ? `${data.source_host}/${data.source_database ?? ""}`
@@ -1489,9 +1491,11 @@ function BackupCard() {
           </dd>
         </div>
         <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
-          <dt className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Local target</dt>
+          <dt className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Supabase target</dt>
           <dd className="mt-1 truncate text-xs font-medium">
-            {data?.target_database ?? "Not configured"}
+            {data?.target_host
+              ? `${data.target_host}/${data.target_database ?? ""}`
+              : "Not configured"}
           </dd>
         </div>
         <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
@@ -1522,7 +1526,7 @@ function BackupCard() {
         </Button>
         <p className="text-[11px] leading-5 text-muted-foreground">
           Creates a dated dump in <span className="font-mono">backups/</span> and restores it into
-          the local database. The shared Supabase data is not changed.
+          Supabase. The main local database is not changed.
         </p>
       </div>
     </div>

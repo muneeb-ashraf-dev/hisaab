@@ -21,9 +21,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Field, NativeSelect } from "@/components/select-field";
 import { api, errorMessage } from "@/lib/api";
 import { TXN_LABELS } from "@/lib/constants";
-import { formatMoney, toNumber } from "@/lib/format";
+import { formatDate, formatMoney, toNumber } from "@/lib/format";
 import { categoriesByType, useApi, useReferenceData } from "@/lib/hooks";
-import type { Page, Transaction, TransactionType } from "@/lib/types";
+import type { Committee, Page, Transaction, TransactionType } from "@/lib/types";
 
 const TXN_TYPES: TransactionType[] = [
   "expense",
@@ -50,6 +50,7 @@ const schema = z
       .refine((value) => Number.isFinite(Number(value)), "Enter a valid number"),
     account_id: z.string().min(1, "Choose an account"),
     category_id: z.string().optional(),
+    committee_id: z.string().optional(),
     description: z.string().trim().min(1, "Add a short description").max(255),
     merchant_or_payee: z.string().max(160).optional(),
     payment_method: z.string().max(60).optional(),
@@ -88,6 +89,7 @@ function defaultsFor(transaction?: Transaction | null): FormValues {
     amount: transaction?.amount ?? "",
     account_id: transaction?.account_id ?? "",
     category_id: transaction?.category_id ?? "",
+    committee_id: transaction?.committee_id ?? "",
     description: transaction?.description ?? "",
     merchant_or_payee: transaction?.merchant_or_payee ?? "",
     payment_method: transaction?.payment_method ?? "",
@@ -114,6 +116,7 @@ export function TransactionFormDialog({
   defaultRelatedId?: string;
 }) {
   const { accounts, categories } = useReferenceData();
+  const committees = useApi<Committee[]>(open ? "/committees" : null);
   const editing = Boolean(transaction);
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -146,6 +149,9 @@ export function TransactionFormDialog({
   const expenseCategories = categoriesByType(categories, "expense");
   const categoryType = transactionType === "income" ? "income" : "expense";
   const availableCategories = categoryType === "income" ? incomeCategories : expenseCategories;
+  const committeeCategory = expenseCategories.find(
+    (category) => category.name.toLowerCase() === "committee"
+  );
   const selectedOriginal = refunds.data?.items.find((item) => item.id === relatedId);
   const remaining = selectedOriginal
     ? Math.max(
@@ -182,6 +188,8 @@ export function TransactionFormDialog({
         values.transaction_type === "income" || values.transaction_type === "expense"
           ? values.category_id
           : null,
+      committee_id:
+        values.transaction_type === "expense" ? values.committee_id || null : null,
       related_transaction_id:
         values.transaction_type === "refund" ? values.related_transaction_id : null,
     };
@@ -236,6 +244,7 @@ export function TransactionFormDialog({
                     form.setValue("related_transaction_id", "");
                   }
                   if (value !== "refund") form.setValue("related_transaction_id", "");
+                  if (value !== "expense") form.setValue("committee_id", "");
                 }}
                 options={TXN_TYPES.map((type) => ({ value: type, label: TXN_LABELS[type] }))}
               />
@@ -285,6 +294,43 @@ export function TransactionFormDialog({
                     label: category.name,
                   }))}
                   placeholder="Choose category"
+                />
+              </Field>
+            ) : null}
+
+            {transactionType === "expense" ? (
+              <Field
+                label="Committee plan"
+                htmlFor="txn-committee"
+                hint="Optional. Links this expense to a committee plan so the committee page counts this month as paid."
+                className="sm:col-span-2"
+              >
+                <NativeSelect
+                  id="txn-committee"
+                  value={form.watch("committee_id") ?? ""}
+                  onChange={(value) => {
+                    form.setValue("committee_id", value, { shouldValidate: true });
+                    if (value && committeeCategory && !form.getValues("category_id")) {
+                      form.setValue("category_id", committeeCategory.id, {
+                        shouldValidate: true,
+                      });
+                    }
+                    if (value && !form.getValues("description")) {
+                      const selected = committees.data?.find(
+                        (committee) => committee.id === value
+                      );
+                      if (selected) {
+                        form.setValue("description", `${selected.name} installment`);
+                      }
+                    }
+                  }}
+                  options={(committees.data ?? []).map((committee) => ({
+                    value: committee.id,
+                    label: `${committee.name} (${formatDate(committee.start_month, "MMM yyyy")} - ${formatDate(committee.end_month, "MMM yyyy")})`,
+                  }))}
+                  placeholder={
+                    committees.loading ? "Loading committees..." : "Not linked to a committee"
+                  }
                 />
               </Field>
             ) : null}

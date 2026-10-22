@@ -85,6 +85,8 @@ export interface Transaction {
   category_id: string | null;
   category_name: string | null;
   category_color: string | null;
+  committee_id: string | null;
+  committee_name: string | null;
   description: string;
   merchant_or_payee: string | null;
   payment_method: string | null;
@@ -136,6 +138,8 @@ export interface LedgerEntry {
   category_id: string | null;
   category_name: string | null;
   category_color: string | null;
+  committee_id: string | null;
+  committee_name: string | null;
   merchant_or_payee: string | null;
   payment_method: string | null;
   notes: string | null;
@@ -476,6 +480,38 @@ export interface Goal {
   created_at: string;
   updated_at: string;
   contributions: Contribution[];
+}
+
+export interface CommitteeScheduleItem {
+  month: string;
+  installment_number: number;
+  amount: Money;
+  paid_amount: Money;
+  status: "paid" | "upcoming";
+  source: "prior" | "transaction" | null;
+  is_current: boolean;
+}
+
+export interface Committee {
+  id: string;
+  name: string;
+  monthly_amount: Money;
+  start_month: string;
+  end_month: string;
+  prior_paid_installments: number;
+  notes: string | null;
+  total_installments: number;
+  total_amount: Money;
+  paid_installments: number;
+  linked_paid_installments: number;
+  total_paid: Money;
+  remaining_installments: number;
+  remaining_amount: Money;
+  current_month: string;
+  progress_pct: number;
+  schedule: CommitteeScheduleItem[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Recurring {

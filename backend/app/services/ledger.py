@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.models.account import Account
 from app.models.category import Category
+from app.models.committee import Committee
 from app.models.enums import LedgerEntryKind, TransactionType
 from app.models.transaction import Transaction
 from app.models.transfer import Transfer
@@ -66,6 +67,8 @@ def ledger_subquery(
             Transaction.category_id.label("category_id"),
             Category.name.label("category_name"),
             Category.color.label("category_color"),
+            Transaction.committee_id.label("committee_id"),
+            Committee.name.label("committee_name"),
             Transaction.merchant_or_payee.label("merchant_or_payee"),
             Transaction.payment_method.label("payment_method"),
             Transaction.notes.label("notes"),
@@ -78,6 +81,7 @@ def ledger_subquery(
         .select_from(Transaction)
         .join(Account, Account.id == Transaction.account_id)
         .outerjoin(Category, Category.id == Transaction.category_id)
+        .outerjoin(Committee, Committee.id == Transaction.committee_id)
         .where(Transaction.deleted_at.is_(None))
     )
 
@@ -100,6 +104,8 @@ def ledger_subquery(
             cast(null(), UUID(as_uuid=True)).label("category_id"),
             cast(null(), String(80)).label("category_name"),
             cast(null(), String(7)).label("category_color"),
+            cast(null(), UUID(as_uuid=True)).label("committee_id"),
+            cast(null(), String(120)).label("committee_name"),
             cast(null(), String(160)).label("merchant_or_payee"),
             cast(null(), String(60)).label("payment_method"),
             Transfer.notes.label("notes"),
@@ -218,6 +224,8 @@ def _to_entry(row) -> LedgerEntry:  # type: ignore[no-untyped-def]
         category_id=row["category_id"],
         category_name=row["category_name"],
         category_color=row["category_color"],
+        committee_id=row["committee_id"],
+        committee_name=row["committee_name"],
         merchant_or_payee=row["merchant_or_payee"],
         payment_method=row["payment_method"],
         notes=row["notes"],

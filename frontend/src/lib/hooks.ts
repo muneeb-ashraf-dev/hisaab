@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { parseISO } from "date-fns";
 
 import { api, errorMessage } from "@/lib/api";
 import { monthEndISO, monthStartISO, toISODate } from "@/lib/format";
@@ -117,7 +116,7 @@ export interface BackupStatusState extends AsyncState<BackupStatus> {
   backupNow: () => Promise<BackupResult>;
 }
 
-/** Polls the local-backup status and exposes the manual backup action. */
+/** Polls the Supabase-backup status and exposes the manual backup action. */
 export function useBackupStatus({ pollMs = 30000 }: { pollMs?: number } = {}): BackupStatusState {
   const state = useApi<BackupStatus>("/system/backup/status");
   const { refresh } = state;
@@ -162,15 +161,11 @@ export interface DateRange {
   end: string;
 }
 
-/** The reporting data starts at the baseline date. When the baseline is in the
- * future (fresh setup), the UI should open on that period rather than an empty
- * current month. */
-export function trackingAnchor(baselineDate?: string | null): Date {
-  const now = new Date();
-  if (!baselineDate) return now;
-  const baseline = parseISO(baselineDate);
-  if (Number.isNaN(baseline.getTime())) return now;
-  return baseline > now ? baseline : now;
+/** The app always opens on the current month. The baseline date is an opening
+ * position, not a lock on the reporting period; users can navigate to any month
+ * with the period selector. */
+export function trackingAnchor(_baselineDate?: string | null): Date {
+  return new Date();
 }
 
 export function useTrackingPeriod(): {

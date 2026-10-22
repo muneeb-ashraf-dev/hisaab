@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.models.account import Account
 from app.models.category import Category
+from app.models.committee import Committee
 from app.models.enums import AuditAction, CategoryType, LedgerEntryKind, TransactionType
 from app.models.transaction import Transaction
 from app.schemas.transaction import (
@@ -26,6 +27,7 @@ EDITABLE_FIELDS = (
     "amount",
     "account_id",
     "category_id",
+    "committee_id",
     "description",
     "merchant_or_payee",
     "payment_method",
@@ -75,6 +77,8 @@ def serialize_transaction(txn: Transaction, refunded: Decimal | None = None) -> 
         category_id=txn.category_id,
         category_name=txn.category.name if txn.category else None,
         category_color=txn.category.color if txn.category else None,
+        committee_id=txn.committee_id,
+        committee_name=txn.committee.name if txn.committee else None,
         description=txn.description,
         merchant_or_payee=txn.merchant_or_payee,
         payment_method=txn.payment_method,
@@ -247,6 +251,24 @@ def validate_merged(
             raise ValidationError("Refunds must reference the original expense.")
         if category is not None and category.category_type != CategoryType.EXPENSE:
             raise ValidationError("A refund category must be an expense category.")
+
+    committee_id = merged.get("committee_id")
+    if committee_id is not None:
+        if txn_type != TransactionType.EXPENSE:
+            raise ValidationError("Only expenses can be linked to a committee.")
+        committee = db.get(Committee, committee_id)
+        if committee is None:
+            raise ValidationError("Committee not found.")
+        transaction_date = merged.get("transaction_date")
+        if (
+            transaction_date is None
+            or transaction_date < committee.start_month
+            or transaction_date > committee.end_month
+        ):
+            raise ValidationError(
+                "The transaction date must be within the committee plan period "
+                f"({committee.start_month:%b %Y} to {committee.end_month:%b %Y})."
+            )
 
 
 def _validate_references(db: Session, payload: TransactionCreate) -> None:

@@ -5,6 +5,7 @@ from app.api.routes import (
     baseline,
     budgets,
     categories,
+    committees,
     dashboard,
     goals,
     imports,
@@ -22,6 +23,7 @@ api_router.include_router(categories.router)
 api_router.include_router(transactions.router)
 api_router.include_router(transfers.router)
 api_router.include_router(budgets.router)
+api_router.include_router(committees.router)
 api_router.include_router(goals.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(reports.router)

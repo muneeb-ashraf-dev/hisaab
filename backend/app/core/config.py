@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -24,9 +25,10 @@ class Settings(BaseSettings):
         "postgresql+psycopg://postgres:postgres123@127.0.0.1:5432/personal_finance"
     )
     test_database_url: str | None = None
-    # Local PostgreSQL target used by the manual backup button. Keep this
-    # separate from DATABASE_URL when DATABASE_URL points at Supabase.
-    local_database_url: str | None = None
+    # Optional off-site backup target. The manual backup button dumps the main
+    # DATABASE_URL (local PostgreSQL) and restores it into this database
+    # (normally Supabase's Session Pooler).
+    backup_database_url: str | None = None
     # Optional directory containing pg_dump/pg_restore. When unset the backend
     # searches PATH and the standard PostgreSQL installation folders.
     pg_bin: str | None = None
@@ -36,10 +38,12 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     log_level: str = "INFO"
     currency: str = "PKR"
-    # Baseline used by the idempotent seed command.
-    baseline_date: str = "2026-11-01"
+    # Opening date used by the idempotent seed command. Defaults to today so a
+    # fresh install starts tracking immediately instead of waiting for a
+    # hard-coded future baseline.
+    baseline_date: str = Field(default_factory=lambda: date.today().isoformat())
 
-    @field_validator("api_auth_token", "local_database_url", "pg_bin", mode="before")
+    @field_validator("api_auth_token", "backup_database_url", "pg_bin", mode="before")
     @classmethod
     def empty_optional_is_none(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():

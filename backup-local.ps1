@@ -1,21 +1,24 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-    Create a public-schema backup of the database configured in backend/.env.
+    Create a public-schema file backup of the main local database.
 
 .DESCRIPTION
-    Reads DATABASE_URL from backend/.env, removes the SQLAlchemy +psycopg
-    driver prefix, and runs pg_dump in custom format. Only the public schema is
-    included so the dump can be restored into a normal local PostgreSQL install.
+    Reads DATABASE_URL from backend/.env (the main local PostgreSQL database),
+    removes the SQLAlchemy +psycopg driver prefix, and runs pg_dump in custom
+    format. Only the public schema is included so the dump can be restored into
+    a normal PostgreSQL install.
 
-    The newest 30 dumps are kept by default. The password is passed through the
-    PGPASSWORD environment variable, not on the command line.
+    This creates local .dump files. The in-app Settings -> System -> Supabase
+    backup button is the separate operation that restores the main database into
+    Supabase. The newest 30 dumps are kept by default. The password is passed
+    through the PGPASSWORD environment variable, not on the command line.
 
 .EXAMPLE
-    .\backup-supabase.ps1
+    .\backup-local.ps1
 
 .EXAMPLE
-    .\backup-supabase.ps1 -Keep 60
+    .\backup-local.ps1 -Keep 60
 #>
 [CmdletBinding()]
 param(
@@ -114,7 +117,7 @@ $port = if ($uri.Port -gt 0) { $uri.Port } else { 5432 }
 $pgDump = Find-PgDump
 New-Item -ItemType Directory -Force -Path $BackupDirectory | Out-Null
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$backupFile = Join-Path $BackupDirectory "supabase-public-$timestamp.dump"
+$backupFile = Join-Path $BackupDirectory "postgres-public-$timestamp.dump"
 
 $previousPassword = $env:PGPASSWORD
 try {
@@ -144,7 +147,8 @@ finally {
 $info = Get-Item -LiteralPath $backupFile
 Write-Host "Backup created: $($info.FullName) ($([math]::Round($info.Length / 1KB, 1)) KB)"
 
-$oldBackups = Get-ChildItem -LiteralPath $BackupDirectory -Filter 'supabase-public-*.dump' -File |
+$oldBackups = Get-ChildItem -LiteralPath $BackupDirectory -File |
+    Where-Object { $_.Name -match '^(postgres|supabase)-public-.*\.dump$' } |
     Sort-Object LastWriteTime -Descending |
     Select-Object -Skip $Keep
 

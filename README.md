@@ -22,7 +22,7 @@ context but is never counted as income or spending in any report.
 - [What is included](#what-is-included)
 - [Baseline snapshot](#baseline-snapshot)
 - [Local development](#local-development)
-- [Shared Supabase database](#shared-supabase-database)
+- [Local PostgreSQL and Supabase backup](#local-postgresql-and-supabase-backup)
 - [Environment variables](#environment-variables)
 - [Data model and invariants](#data-model-and-invariants)
 - [CSV import and export](#csv-import-and-export)
@@ -44,9 +44,10 @@ context but is never counted as income or spending in any report.
 | Reports | Monthly summary, annual overview with per-account opening/closing balances, category breakdown and drill-down, per-account reports, analytics (trends, fixed vs variable, largest expenses, period comparison), CSV monthly report export. |
 | Budgets | Overall and per-category envelopes, monthly/quarterly/yearly periods, warning thresholds, progress net of refunds. |
 | Goals | Savings targets with dated contributions, progress and status. Contributions are planning records and do not move account balances. |
+| Committees | Monthly committee plans with start/end month, installment amount, month-by-month schedule, already-paid installments and linked committee expenses. The plan itself is planning-only; linked expense transactions update paid months and appear in reports. |
 | Recurring | Templates for weekly/monthly/quarterly/yearly payments, due reminders, post one or post all due, skip occurrence, optional auto-post. Posting is idempotent per due date. |
 | Import / export | CSV preview with per-row validation and duplicate detection, commit of valid rows, missing-category creation, ledger export including transfers, monthly report export. |
-| Settings | Account and category CRUD with deactivation/soft delete, baseline editor with reconciliation checks and itemized historical usage, audit log with filtering, system status, local backup card and global backup reminder. |
+| Settings | Account and category CRUD with deactivation/soft delete, baseline editor with reconciliation checks and itemized historical usage, audit log with filtering, system status, Supabase backup card and global backup reminder. |
 
 Money is stored as `NUMERIC(14,2)` and serialized as decimal strings. The API uses
 explicit lowercase enum values (`income`, `expense`, `adjustment_increase`, …) and
@@ -59,21 +60,22 @@ enforces them with database `CHECK` constraints.
 Seeded by `python -m app.seed`, idempotently. The seed only creates missing
 accounts, categories and the baseline; it never invents transactions.
 
+The ledger starts from a clean position with no historical usage:
+
 | Account | Original funds | Historical usage | Opening balance |
 | --- | ---: | ---: | ---: |
-| `salary-M` | 75,000.00 | 48,000.00 | 27,000.00 |
-| `salary-A` | 63,000.00 | 63,000.00 | 0.00 |
-| `savings` | 300,000.00 | 195,000.00 | 105,000.00 |
-| **Total** | **438,000.00** | **306,000.00** | **132,000.00** |
+| `salary-M` | 27,000.00 | 0.00 | 27,000.00 |
+| `salary-A` | 0.00 | 0.00 | 0.00 |
+| `savings` | 300,000.00 | 0.00 | 300,000.00 |
+| **Total** | **327,000.00** | **0.00** | **327,000.00** |
 
-Baseline date: **2026-11-01**, which is also each account's opening date.
+The baseline date defaults to the day the seed runs (today unless
+`BASELINE_DATE` is set) and is also each account's opening date. The Dashboard
+always opens on the current month; the baseline date does not lock the reporting
+period.
 
-Savings historical usage is fully itemized as **Laptop 125,000** and
-**Committee 70,000**. The other **111,000** of historical usage (salary-M 48,000
-and salary-A 63,000) is intentionally left unclassified.
-
-The Settings → Baseline editor enforces `original funds = historical usage +
-opening balance` for every account. Historical usage appears only in baseline
+The Settings → Baseline editor still enforces `original funds = historical usage
++ opening balance` for every account. Opening balances appear only in baseline
 context and never in monthly income, expense, category or account activity
 reports.
 
@@ -120,6 +122,11 @@ APP_ENV=development
 The backend reads `.env` from `backend/` and then the repository root, so either
 location works. Change the credentials or port there if your PostgreSQL setup
 differs.
+
+The main database is always the local `DATABASE_URL`. Supabase is optional and is
+used only as an off-site backup target. Add `BACKUP_DATABASE_URL` with the
+Supabase Session Pooler URL when you want the **Back up now** button; see
+[Local PostgreSQL and Supabase backup](#local-postgresql-and-supabase-backup).
 
 ### 3. Install, migrate and seed
 
@@ -183,29 +190,30 @@ npm start
 
 ---
 
-## Shared Supabase database
+## Local PostgreSQL and Supabase backup
 
-The frontend and backend can run locally while both installations share one
-Supabase PostgreSQL database. Use Supabase's **Session Pooler** connection
-string (port `5432`, with `?sslmode=require`).
+The local PostgreSQL database is the **main read/write database**. Supabase is
+optional and is used only as an off-site recovery copy. This keeps normal
+reads/writes fast because they never cross the network.
 
 In `backend/.env`:
 
 ```dotenv
-DATABASE_URL=postgresql+psycopg://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require
+DATABASE_URL=postgresql+psycopg://postgres:postgres123@127.0.0.1:5432/personal_finance
 TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres123@127.0.0.1:5432/personal_finance_test
-LOCAL_DATABASE_URL=postgresql+psycopg://postgres:postgres123@127.0.0.1:5432/personal_finance
+BACKUP_DATABASE_URL=postgresql+psycopg://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require
 ```
 
-- Keep `TEST_DATABASE_URL` local. The test suite must never point at Supabase.
-- Keep `LOCAL_DATABASE_URL` local to each machine. It is the target for the
-  in-app **Back up now** button and the recovery copy on that PC.
-- The application URL needs the `postgresql+psycopg://` prefix.
-- `psql` and `pg_dump` need the native `postgresql://` form instead.
+- `DATABASE_URL` must stay local. Run migrations and seed against it.
+- `TEST_DATABASE_URL` must stay local. The test suite refuses to run against a
+  database whose name does not end in `_test`.
+- `BACKUP_DATABASE_URL` is the optional Supabase **Session Pooler** URL. Keep
+  `?sslmode=require` and the `postgresql+psycopg://` prefix for the backend.
+- `pg_dump`, `psql` and `pg_restore` need the native `postgresql://` form.
 - Direct Supabase connections are IPv6-only by default; the Session Pooler is
   IPv4-compatible and works with this setup.
 
-Run migrations and seed **once** against the shared database:
+### Initial setup
 
 ```bash
 cd backend
@@ -213,22 +221,20 @@ uv run alembic upgrade head
 uv run python -m app.seed
 ```
 
-Do not run those commands against each person's local copy. Migrations only
-change schema; they never copy data between databases. After the shared database
-is ready, each machine starts its own app with `start-app.bat` while pointing its
-`backend/.env` at the same Supabase URL.
+Migrations change the local schema only. They do not copy data to Supabase. Use
+Settings → System → **Supabase backup** → **Back up now** (or the endpoint
+directly) when you want to refresh the off-site copy.
 
-For a completely separate installation (for example a family member who should
-not share data), create a separate Supabase project or use local PostgreSQL and
-point that copy's `DATABASE_URL` at its own database. No code changes are needed.
+### Separate installations
 
-For emergency use, keep a local PostgreSQL copy and point `DATABASE_URL` back to
-`postgresql+psycopg://postgres:postgres123@127.0.0.1:5432/personal_finance`.
-The local copy is a backup target, not a second live writer.
+Each independent copy (for example a family member's PC) should use its own local
+`personal_finance` database and, if desired, its own Supabase backup project or
+no Supabase target at all. Point `DATABASE_URL` at that local database and set a
+separate `BACKUP_DATABASE_URL`; no code changes are needed.
 
-Both machines can keep their own `LOCAL_DATABASE_URL`. The **Back up now** button
-runs on the machine that serves the frontend, so each person gets an independent
-local recovery copy. The shared Supabase data is only read by this operation.
+Do not run two app instances as live writers against the same database. If you
+need to recover, restore a dump into the local database instead of turning
+Supabase into a second writer.
 
 ---
 
@@ -236,16 +242,16 @@ local recovery copy. The shared Supabase data is only read by this operation.
 
 | Variable | Used by | Default | Purpose |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | backend | `postgres@127.0.0.1:5432/personal_finance` | SQLAlchemy connection URL. Use the local database or Supabase's Session Pooler. |
-| `LOCAL_DATABASE_URL` | backend | unset | Per-machine PostgreSQL target for **Back up now**. Point it at `personal_finance` on each PC when `DATABASE_URL` is Supabase. |
+| `DATABASE_URL` | backend | `postgres@127.0.0.1:5432/personal_finance` | Main local PostgreSQL connection URL used for all reads and writes. |
+| `BACKUP_DATABASE_URL` | backend | unset | Supabase Session Pooler URL. The **Back up now** button dumps the main database and restores it here. |
 | `PG_BIN` | backend | auto-detect | Optional folder containing `pg_dump` and `pg_restore` (for example `C:\Program Files\PostgreSQL\18\bin`). |
-| `BACKUP_DIR` | backend | `<repo>/backups` | Where the in-app backup writes dumps and `backup-state.json`. |
+| `BACKUP_DIR` | backend | `<repo>/backups` | Where backups write dumps and `backup-state.json`. |
 | `BACKUP_KEEP` | backend | `30` | Number of newest dumps to retain. |
 | `TEST_DATABASE_URL` | backend | — | Optional override for tests. `tests/conftest.py` hard-sets the test DB for safety. |
 | `APP_ENV` | backend | `development` | `development`, `test` or `production`. |
 | `API_AUTH_TOKEN` | backend + frontend | unset | When set, every `/api/v1` request requires `Authorization: Bearer <token>`. The frontend attaches it server-side. Leave blank for trusted local use. |
 | `CORS_ORIGINS` | backend | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated browser origins. |
-| `BASELINE_DATE` | backend seed | `2026-11-01` | Opening date used when the baseline is first created. |
+| `BASELINE_DATE` | backend seed | today | Opening date used when the baseline is first created. |
 | `LOG_LEVEL` | backend | `INFO` | Python log level. |
 | `API_BASE_URL` | frontend | `http://127.0.0.1:8000` | Backend base URL used by the Next.js proxy. |
 
@@ -287,13 +293,29 @@ Transfers currently do **not** enforce a sufficient-funds check, so a source
 account may go negative. This is documented in `backend/tests/README.md` and is
 the one intentionally skipped test.
 
+### Committees
+
+A committee plan stores a name, monthly installment amount, starting month and
+ending month. The total installment count and total amount are derived from the
+period. If the committee started before you began using Hisaab, record the
+historical installments as **already paid**; those months are planning data and
+do not create ledger entries.
+
+Future committee payments are ordinary expense transactions. Choose the
+committee in the transaction form's **Committee plan** field, and the first
+transaction in each new month marks that installment as paid on the committee
+page. The committee page calculates paid months from the already-paid count plus
+linked expense months through the selected month. The plan itself never creates
+transactions, transfers or account balance changes; only the linked expense does,
+so it appears in reports like any other expense.
+
 ### Reporting conventions
 
 - Date ranges are inclusive.
 - `expenses_net = expenses_gross − refunds`; budgets use net spending.
 - Transfers are reported separately as `transfers_in` / `transfers_out`.
-- Baseline historical usage never contributes to income or expenses; period
-  reports before the baseline date return zero activity.
+- Opening balances and historical usage never contribute to income or expenses;
+  period reports before the opening date return zero activity.
 - Per-account annual reports include the opening balance for periods that end
   after the account opened, so opening + activity = closing reconciles.
 - Soft-deleted transactions and transfers are excluded everywhere.
@@ -416,13 +438,13 @@ uv run ruff check .
 Requirements: PostgreSQL reachable at `127.0.0.1:5432`, role `postgres`, database
 `personal_finance_test`. Do not run two test sessions concurrently.
 
-Current result: **73 passed, 1 skipped** (the skipped test documents the missing
+Current result: **88 passed, 1 skipped** (the skipped test documents the missing
 transfer funds check). Behaviour notes are in `backend/tests/README.md`.
 
 Coverage includes baseline reconciliation and report exclusion, transaction
 CRUD/refunds/idempotency, atomic transfers, all report types, budgets/goals/
-recurring, CSV preview/commit/duplicates/exports, API contracts, auth and
-dashboard aggregations.
+committees/recurring, CSV preview/commit/duplicates/exports, API contracts, auth,
+dashboard aggregations and backup safety checks.
 
 ### Frontend
 
@@ -437,101 +459,114 @@ client-side through the proxy.
 
 ### Manual smoke test
 
-1. Dashboard opens on the baseline month and shows the 132,000 opening position
-   with no historical usage in income/expense totals.
+1. Dashboard opens on the current month and shows the 327,000 opening position
+   with no opening balance in income/expense totals.
 2. Create an expense, edit it, refund part of it, and confirm net spending falls.
 3. Transfer between accounts and confirm the combined balance is unchanged.
 4. Delete the transfer and confirm both balances are restored.
 5. Create a budget and verify utilization uses net spending.
 6. Create a goal and add a contribution; account balances must not change.
-7. Create and post a recurring template; confirm next due advances and a
+7. Create a committee plan (for example 19 monthly installments) and change the
+   as-of month; confirm paid and remaining amounts and the schedule update
+   without changing account balances.
+8. Create and post a recurring template; confirm next due advances and a
    transaction appears with source `recurring`.
-8. Import a CSV with one valid, one duplicate and one invalid row; commit and
+9. Import a CSV with one valid, one duplicate and one invalid row; commit and
    confirm only the valid row is written. Re-preview to confirm duplicates.
-9. Save the baseline with a deliberate mismatch and confirm the validation error;
-   then restore valid values.
+10. Save the baseline with a deliberate mismatch and confirm the validation error;
+    then restore valid values.
 
 ---
 
 ## Backup and restore
 
-### Shared Supabase backup (recommended)
+### Backup directions
 
-Supabase is the only live database. Keep a scheduled `pg_dump` on the local
-machine as the disaster-recovery copy. A dump is a point-in-time snapshot:
-writes made after the latest dump are not recovered or merged automatically.
-Keep a copy off the machine as well.
+There are two independent recovery paths:
 
-`pg_dump` needs the native URL, not the SQLAlchemy `+psycopg` URL:
+1. **Local file backup** - the main local database is dumped to a dated `.dump`
+   file under `backups/`. This is the fastest recovery path.
+2. **Supabase off-site backup** - the main local database is dumped and restored
+   into Supabase. Use this when you want a copy that survives loss of the PC.
+
+Both are point-in-time snapshots. Writes made after the latest backup are not
+recovered or merged automatically.
+
+### Local file backup script
+
+`pg_dump` needs the native URL, not the SQLAlchemy `+psycopg` URL. The repository
+includes `backup-local.ps1`, which reads `DATABASE_URL` from `backend/.env`,
+writes a public-schema dump under `backups/`, and keeps the newest 30 dumps.
+Schedule it daily with Task Scheduler if desired:
+
+```text
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\path\to\PRJ-9-EXPENSE_TRACKER\backup-local.ps1"
+```
+
+The manual equivalent is:
 
 ```powershell
 New-Item -ItemType Directory -Force backups | Out-Null
-$env:PGPASSWORD = '<supabase-db-password>'
-pg_dump "postgresql://postgres.<project-ref>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require" --schema=public -Fc -f "backups\supabase-public-$(Get-Date -Format yyyyMMdd-HHmm).dump"
+$env:PGPASSWORD = 'postgres123'
+pg_dump "postgresql://postgres@127.0.0.1:5432/personal_finance" --schema=public -Fc -f "backups\postgres-public-$(Get-Date -Format yyyyMMdd-HHmm).dump"
 ```
 
-Use `--schema=public` so the dump contains only the application tables. Supabase's
-internal schemas (for example `vault`) are not portable to a local PostgreSQL
-install. The custom-format dump includes the schema, accounts, baseline, usage
-items, transactions, transfers, budgets, goals, recurring templates, audit logs
-and soft-deleted rows.
+Use `--schema=public` so the dump contains only the application tables. The
+custom-format dump includes the schema, accounts, baseline, usage items,
+transactions, transfers, budgets, goals, committees, recurring templates, audit
+logs and soft-deleted rows.
 
-The repository includes `backup-supabase.ps1`, which reads `backend/.env`, writes
-a public-schema dump under `backups/`, and keeps the newest 30 dumps. Schedule it
-daily with Task Scheduler:
+### In-app Supabase backup button and reminder
 
-```text
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\path\to\PRJ-9-EXPENSE_TRACKER\backup-supabase.ps1"
-```
+Settings -> **System** contains a **Supabase backup** card. It shows the main
+local source, the Supabase target, the latest backup time and the latest data
+change. **Back up now**:
 
-To rehearse a restore, load the dump into a separate local database, verify it,
-then point `DATABASE_URL` at that database if you need to run from the backup:
+1. Runs `pg_dump --schema=public` against the main local `DATABASE_URL`.
+2. Writes a dated dump under `backups/`.
+3. Restores it into `BACKUP_DATABASE_URL` with `--clean --if-exists
+   --single-transaction` and verifies row counts.
+4. Stores `backups/backup-state.json` so the app knows what was covered.
+
+The main local database is not changed by this operation. Supabase's `public`
+schema is replaced with the local snapshot; do not edit data in Supabase and
+expect it to be merged back. Each PC needs `pg_dump`/`pg_restore` available. The
+backend searches `PATH`, the standard Windows PostgreSQL folders, then `PG_BIN`
+if set.
+
+After any successful create/update/delete/import, the frontend dispatches a
+data-changed event. The global banner also polls every 30 seconds and on window
+focus. If the main database has audit-log changes newer than the last Supabase
+backup, the banner appears on every session with a **Back up now** button. The
+banner can be dismissed for the current change, but it returns when new changes
+arrive or on the next session.
+
+This is still a point-in-time copy, not continuous replication. If the local
+database is lost, restore the newest local dump or dump Supabase back into the
+local database:
 
 ```powershell
-createdb -h 127.0.0.1 -p 5432 -U postgres personal_finance_recovery
-pg_restore -h 127.0.0.1 -p 5432 -U postgres --no-owner --no-privileges --clean --if-exists -d personal_finance_recovery "backups\supabase-public-YYYYMMDD-HHmm.dump"
+# Dump Supabase (native postgresql:// URL)
+$env:PGPASSWORD = '<supabase-db-password>'
+pg_dump "postgresql://postgres.<project-ref>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require" --schema=public -Fc -f "backups\supabase-recovery.dump"
+
+# Restore into the local database (stop the app first)
+pg_restore -h 127.0.0.1 -p 5432 -U postgres --no-owner --no-privileges --clean --if-exists --single-transaction -d personal_finance "backups\supabase-recovery.dump"
 ```
 
 The public-schema dump contains `CREATE SCHEMA public`, so keep `--clean
 --if-exists` when restoring into a database whose `public` schema already exists.
+Do not run Supabase as a second live writer.
 
-Stop the app before restoring, and do not run Supabase and the recovered local
-database as two live writers. The local copy is for recovery, not multi-master
-sync.
+### Rehearsing a restore to another local database
 
-### In-app backup button and reminder
-
-Settings → **System** contains a **Local backup** card. It shows the Supabase
-source, this machine's local target, the latest backup time and the latest data
-change. **Back up now**:
-
-1. Runs `pg_dump --schema=public` against Supabase.
-2. Writes a dated dump under `backups/`.
-3. Restores it into `LOCAL_DATABASE_URL` with `--clean --if-exists
-   --single-transaction` and verifies row counts.
-4. Stores `backups/backup-state.json` so the app knows what was covered.
-
-The operation runs on the backend machine and never writes to Supabase. Each PC
-needs `pg_dump`/`pg_restore` available. The backend searches `PATH`, the standard
-Windows PostgreSQL folders, then `PG_BIN` if set.
-
-After any successful create/update/delete/import, the frontend dispatches a
-data-changed event. The global banner also polls every 30 seconds and on window
-focus. If Supabase has audit-log changes newer than the last local backup, the
-banner appears on every session with a **Back up now** button. The banner can be
-dismissed for the current change, but it returns when new changes arrive or on
-the next session.
-
-This is still a point-in-time copy, not continuous replication. If Supabase is
-lost, restore the newest dump; writes made after that dump are not recovered
-automatically.
-
-### Local PostgreSQL dump (development)
-
-```bash
-pg_dump -h 127.0.0.1 -p 5432 -U postgres -Fc -f personal_finance.dump personal_finance
-pg_restore -h 127.0.0.1 -p 5432 -U postgres --clean --if-exists -d personal_finance personal_finance.dump
+```powershell
+createdb -h 127.0.0.1 -p 5432 -U postgres personal_finance_recovery
+pg_restore -h 127.0.0.1 -p 5432 -U postgres --no-owner --no-privileges --clean --if-exists -d personal_finance_recovery "backups\postgres-public-YYYYMMDD-HHmm.dump"
 ```
+
+Verify the row counts, then point `DATABASE_URL` at that database if you need to
+run from the backup.
 
 ### CSV backup
 
@@ -546,8 +581,8 @@ templates, audit history or soft-deleted rows.
 ```text
 .
 ├── .env.example
-├── backup-supabase.bat
-├── backup-supabase.ps1
+├── backup-local.bat
+├── backup-local.ps1
 ├── start-app.bat
 ├── start-backend.bat
 ├── start-frontend.bat
@@ -581,19 +616,22 @@ The API is documented interactively at `/docs` and `/redoc`.
 ## Troubleshooting
 
 **Dashboard opens on an empty month.**  
-The baseline is in the future relative to some machines' clocks. The UI opens on
-the baseline month when it is ahead of today; use the period selector to move
-between months. Reports before the baseline intentionally show zero activity.
+The dashboard always opens on the current month. If the account opening date is
+later than today, use the period selector to move between months. Reports before
+the opening date intentionally show zero activity.
 
 **`psql`/backend cannot connect.**  
 Confirm PostgreSQL is listening on `127.0.0.1:5432` and that `DATABASE_URL` uses
 the `postgres` role and password configured on your machine.
 
-**Supabase connection fails.**  
-Use the Session Pooler host and port `5432`, and keep `?sslmode=require`. The
-backend needs `postgresql+psycopg://`; `psql` and `pg_dump` need the native
-`postgresql://` form. If the app works but `pg_dump` fails, check that the
-password is in `PGPASSWORD` and that the URL does not contain `+psycopg`.
+**Supabase backup fails.**  
+Normal app traffic uses the local `DATABASE_URL`; a Supabase failure should not
+make the app slow or unavailable. For the backup button, set
+`BACKUP_DATABASE_URL` to the Session Pooler host on port `5432` with
+`?sslmode=require`. The backend needs `postgresql+psycopg://`; `psql`, `pg_dump`
+and `pg_restore` need the native `postgresql://` form. If the button fails, check
+that the password is in `PGPASSWORD` and that the URL does not contain
+`+psycopg`.
 
 **`uv` is not recognized.**  
 Install it from <https://docs.astral.sh/uv/> and ensure `~/.local/bin` is on

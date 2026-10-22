@@ -22,7 +22,7 @@ export function BackupReminder() {
     try {
       const result = await backupNow();
       const transactionCount = result.counts.transactions ?? 0;
-      toast.success("Local backup saved", {
+      toast.success("Supabase backup saved", {
         description: `${transactionCount} transactions copied to ${result.target_database} (${formatBytes(result.size_bytes)}).`,
       });
     } catch (backupError) {
@@ -35,7 +35,7 @@ export function BackupReminder() {
       <div className="mx-auto flex w-full max-w-[1420px] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 text-amber-900 sm:px-6 lg:px-8 dark:text-amber-200">
         <Database className="size-4 shrink-0" />
         <p className="min-w-0 flex-1 text-xs leading-5">
-          <span className="font-semibold">Local backup recommended.</span> {data.message}
+          <span className="font-semibold">Supabase backup recommended.</span> {data.message}
           {data.last_change_at ? (
             <span className="text-amber-800/80 dark:text-amber-200/70">
               {" "}

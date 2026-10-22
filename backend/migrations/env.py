@@ -14,6 +14,7 @@ from app.models import (  # noqa: F401  (import registers all models)
     BaselineUsageItem,
     Budget,
     Category,
+    Committee,
     FinancialGoal,
     GoalContribution,
     ImportBatch,

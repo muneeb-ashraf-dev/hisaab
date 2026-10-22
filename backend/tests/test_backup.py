@@ -3,19 +3,23 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.exceptions import ValidationError
 from app.models.audit import AuditLog
 from app.models.enums import AuditAction
+from app.services.backup import _validate_target
 from tests.helpers import API
 
 
-def test_backup_status_is_disabled_without_local_target(
+def test_backup_status_is_disabled_without_supabase_target(
     client: TestClient, monkeypatch, tmp_path
 ) -> None:
-    monkeypatch.setattr(settings, "local_database_url", None)
+    monkeypatch.setattr(settings, "backup_database_url", None)
     monkeypatch.setattr(settings, "backup_dir", str(tmp_path))
 
     response = client.get(f"{API}/system/backup/status")
@@ -24,7 +28,7 @@ def test_backup_status_is_disabled_without_local_target(
     body = response.json()
     assert body["configured"] is False
     assert body["can_backup"] is False
-    assert "LOCAL_DATABASE_URL" in body["message"]
+    assert "BACKUP_DATABASE_URL" in body["message"]
 
 
 def test_backup_status_detects_changes_after_last_backup(
@@ -58,7 +62,7 @@ def test_backup_status_detects_changes_after_last_backup(
 
     monkeypatch.setattr(
         settings,
-        "local_database_url",
+        "backup_database_url",
         "postgresql+psycopg://postgres:postgres123@127.0.0.1:5432/personal_finance_backup",
     )
     monkeypatch.setattr(settings, "backup_dir", str(backup_dir))
@@ -74,25 +78,41 @@ def test_backup_status_detects_changes_after_last_backup(
     assert "Changes have been made" in body["message"]
 
 
-def test_backup_post_requires_local_target(
+def test_backup_post_requires_supabase_target(
     client: TestClient, monkeypatch, tmp_path
 ) -> None:
-    monkeypatch.setattr(settings, "local_database_url", None)
+    monkeypatch.setattr(settings, "backup_database_url", None)
     monkeypatch.setattr(settings, "backup_dir", str(tmp_path))
 
     response = client.post(f"{API}/system/backup")
 
     assert response.status_code == 422, response.text
-    assert "LOCAL_DATABASE_URL" in response.json()["error"]["message"]
+    assert "BACKUP_DATABASE_URL" in response.json()["error"]["message"]
 
 
 def test_backup_post_rejects_source_database(
     client: TestClient, monkeypatch, tmp_path
 ) -> None:
-    monkeypatch.setattr(settings, "local_database_url", settings.database_url)
+    monkeypatch.setattr(settings, "backup_database_url", settings.database_url)
     monkeypatch.setattr(settings, "backup_dir", str(tmp_path))
 
     response = client.post(f"{API}/system/backup")
 
     assert response.status_code == 422, response.text
     assert "same database" in response.json()["error"]["message"].lower()
+
+
+def test_backup_target_allows_remote_postgres_database() -> None:
+    _validate_target(
+        make_url(
+            "postgresql://postgres.project:secret@aws-0-region.pooler.supabase.com:5432/"
+            "postgres?sslmode=require"
+        )
+    )
+
+
+def test_backup_target_rejects_local_postgres_database() -> None:
+    with pytest.raises(ValidationError, match="maintenance database"):
+        _validate_target(
+            make_url("postgresql://postgres:postgres123@127.0.0.1:5432/postgres")
+        )

@@ -70,6 +70,8 @@ function deletedRow(transaction: Transaction): LedgerEntry {
     category_id: transaction.category_id,
     category_name: transaction.category_name,
     category_color: transaction.category_color,
+    committee_id: transaction.committee_id,
+    committee_name: transaction.committee_name,
     merchant_or_payee: transaction.merchant_or_payee,
     payment_method: transaction.payment_method,
     notes: transaction.notes,
@@ -384,6 +386,11 @@ export default function TransactionsPage() {
                         <p className="truncate text-[10px] text-muted-foreground">
                           {row.merchant_or_payee || row.notes || (isTransfer ? "Internal transfer" : "—")}
                         </p>
+                        {row.committee_name ? (
+                          <p className="truncate text-[10px] text-emerald-700 dark:text-emerald-300">
+                            Committee: {row.committee_name}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3 text-xs">
                         {isTransfer ? (

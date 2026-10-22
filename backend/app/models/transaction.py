@@ -44,6 +44,10 @@ class Transaction(Base, UUIDPrimaryKeyMixin, TimestampMixin):
             name="refund_has_original",
         ),
         CheckConstraint(
+            "transaction_type = 'expense' OR committee_id IS NULL",
+            name="committee_only_for_expense",
+        ),
+        CheckConstraint(
             "transaction_type IN ('income', 'expense', 'refund', "
             "'adjustment_increase', 'adjustment_decrease')",
             name="transaction_type_valid",
@@ -56,6 +60,7 @@ class Transaction(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         ),
         Index("ix_transactions_account_date", "account_id", "transaction_date"),
         Index("ix_transactions_category", "category_id"),
+        Index("ix_transactions_committee", "committee_id"),
         Index("ix_transactions_type", "transaction_type"),
         Index(
             "uq_transactions_idempotency_key",
@@ -77,6 +82,9 @@ class Transaction(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     category_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("categories.id", ondelete="RESTRICT"), nullable=True
     )
+    committee_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("committees.id", ondelete="SET NULL"), nullable=True
+    )
     description: Mapped[str] = mapped_column(String(255), nullable=False)
     merchant_or_payee: Mapped[str | None] = mapped_column(String(160))
     payment_method: Mapped[str | None] = mapped_column(String(60))
@@ -94,6 +102,7 @@ class Transaction(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     account: Mapped[Account] = relationship(lazy="joined")  # noqa: F821
     category: Mapped[Category | None] = relationship(lazy="joined")  # noqa: F821
+    committee: Mapped[Committee | None] = relationship(lazy="joined")  # noqa: F821
     related_transaction: Mapped[Transaction | None] = relationship(
         remote_side="Transaction.id", back_populates="refunds"
     )

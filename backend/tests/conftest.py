@@ -21,8 +21,8 @@ os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["APP_ENV"] = "test"
 os.environ.pop("API_AUTH_TOKEN", None)
 os.environ.pop("TEST_DATABASE_URL", None)
-# Never let the test run inherit a real local backup target from backend/.env.
-os.environ.pop("LOCAL_DATABASE_URL", None)
+# Never let the test run inherit a real Supabase backup target from backend/.env.
+os.environ.pop("BACKUP_DATABASE_URL", None)
 os.environ.pop("PG_BIN", None)
 
 import pytest  # noqa: E402
@@ -58,7 +58,7 @@ if not _resolved_name.endswith("_test"):
 settings.api_auth_token = None
 settings.app_env = "test"
 # Pydantic also reads backend/.env, so clear the real backup target explicitly.
-settings.local_database_url = None
+settings.backup_database_url = None
 settings.pg_bin = None
 
 ACCOUNT_SEED = [

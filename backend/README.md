@@ -32,26 +32,30 @@ to run against any database whose name does not end in `_test`. See
 
 Settings are read from the environment and `.env` files (backend directory, then
 repository root). The most important values are `DATABASE_URL`,
-`API_AUTH_TOKEN`, `CORS_ORIGINS` and `BASELINE_DATE`. Defaults target local
-PostgreSQL on `127.0.0.1:5432` with role `postgres` and password `postgres123`.
+`BACKUP_DATABASE_URL`, `API_AUTH_TOKEN`, `CORS_ORIGINS` and `BASELINE_DATE`.
+Defaults target local PostgreSQL on `127.0.0.1:5432` with role `postgres` and
+password `postgres123`.
 
-For the shared setup, set `DATABASE_URL` to Supabase's Session Pooler URL (keep
-the local `TEST_DATABASE_URL`), run migrations and seed once against that shared
-database, and do not run them again from each person's machine. See the root
-README's "Shared Supabase database" section.
+`DATABASE_URL` is the main read/write database and should stay local. Run
+migrations and seed against it.
 
-Set `LOCAL_DATABASE_URL` to this PC's local `personal_finance` database to enable
-Settings → **System** → **Local backup**. That button writes a public-schema dump
-to `../backups/` and restores it into the local target with `pg_restore`. It needs
-`pg_dump` and `pg_restore` on `PATH`, in a standard PostgreSQL install folder, or
-in `PG_BIN`. The status endpoint compares the newest dump with the newest audit
-log, which drives the global backup reminder. `BACKUP_KEEP` controls retention
-(default 30).
+Set `BACKUP_DATABASE_URL` to the Supabase Session Pooler URL to enable
+Settings -> **System** -> **Supabase backup**. That button writes a public-schema
+dump to `../backups/` and restores it into Supabase with `pg_restore`. The main
+local database is not changed. It needs `pg_dump` and `pg_restore` on `PATH`, in a
+standard PostgreSQL install folder, or in `PG_BIN`. The status endpoint compares
+the newest dump with the newest local audit log, which drives the global backup
+reminder. `BACKUP_KEEP` controls retention (default 30).
+
+For an independent installation (for example a family member who should not share
+data), use a separate local `personal_finance` database and, if desired, a
+separate Supabase backup target. No code changes are needed.
 
 ## Design notes
 
 - Money is `Decimal` end to end and `NUMERIC(14,2)` in the database.
 - Transactions carry an explicit type; refunds link to the original expense.
 - Transfers are a single row applied atomically to both accounts.
-- Historical baseline usage is excluded from every income/expense report.
+- Committee plans never create ledger entries. Linked committee expenses update paid months, while already-paid installments cover months before tracking began.
+- Opening balances are excluded from every income/expense report.
 - Deletes are soft deletes; an audit log records every mutation.

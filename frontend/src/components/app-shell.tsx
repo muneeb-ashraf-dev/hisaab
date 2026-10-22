@@ -9,6 +9,7 @@ import {
   CalendarClock,
   ChartColumn,
   CircleDot,
+  HandCoins,
   LayoutDashboard,
   Menu,
   Repeat2,
@@ -34,6 +35,7 @@ const ICONS = {
   Target,
   Trophy,
   CalendarClock,
+  HandCoins,
   ArrowDownUp,
   Settings2,
 } as const;

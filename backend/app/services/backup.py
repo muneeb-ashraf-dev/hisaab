@@ -11,8 +11,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import psycopg
-from psycopg import sql
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.orm import Session
@@ -25,7 +23,8 @@ from app.schemas.system import BackupResult, BackupStatus
 logger = logging.getLogger("personal_finance.backup")
 
 BACKUP_LOCK = threading.Lock()
-DUMP_PREFIX = "supabase-public-"
+DUMP_PREFIX = "postgres-public-"
+DUMP_GLOBS = (f"{DUMP_PREFIX}*.dump", "supabase-public-*.dump")
 STATE_FILE = "backup-state.json"
 COUNTED_TABLES = (
     "accounts",
@@ -40,6 +39,7 @@ COUNTED_TABLES = (
     "goal_contributions",
     "recurring_templates",
     "recurring_occurrences",
+    "committees",
     "import_batches",
     "audit_logs",
 )
@@ -68,8 +68,8 @@ def _source_url() -> URL:
     return url
 
 
-def _target_url() -> URL | None:
-    return _parse_url(settings.local_database_url, "LOCAL_DATABASE_URL")
+def _backup_url() -> URL | None:
+    return _parse_url(settings.backup_database_url, "BACKUP_DATABASE_URL")
 
 
 def _same_database(source: URL, target: URL) -> bool:
@@ -83,17 +83,26 @@ def _same_database(source: URL, target: URL) -> bool:
 def _validate_target(target: URL) -> None:
     database = target.database or ""
     if not database:
-        raise ValidationError("LOCAL_DATABASE_URL must include a database name.")
+        raise ValidationError("BACKUP_DATABASE_URL must include a database name.")
     if database.endswith("_test"):
         raise ValidationError("Refusing to restore a backup into a test database.")
-    if database in {"postgres", "template0", "template1"}:
-        raise ValidationError("Choose a normal application database as the local backup target.")
+    if database in {"template0", "template1"}:
+        raise ValidationError("Choose a normal database as the Supabase backup target.")
+    if database == "postgres" and (target.host or "").lower() in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }:
+        raise ValidationError(
+            "Choose a normal application database as the backup target, not the "
+            "local PostgreSQL maintenance database."
+        )
 
 
 def _connection_args(url: URL) -> list[str]:
     if not url.host or not url.username or not url.database:
         raise ValidationError(
-            "LOCAL_DATABASE_URL and DATABASE_URL must include a host, username and database."
+            "DATABASE_URL and BACKUP_DATABASE_URL must include a host, username and database."
         )
     return [
         "-h",
@@ -178,28 +187,6 @@ def _run_pg_tool(
         )
 
 
-def _ensure_database(url: URL) -> None:
-    _validate_target(url)
-    admin = url.set(drivername="postgresql", database="postgres")
-    dsn = admin.render_as_string(hide_password=False)
-    try:
-        with psycopg.connect(dsn, autocommit=True, connect_timeout=15) as connection:
-            exists = connection.execute(
-                "SELECT 1 FROM pg_database WHERE datname = %s",
-                (url.database,),
-            ).fetchone()
-            if not exists:
-                connection.execute(
-                    sql.SQL("CREATE DATABASE {}").format(sql.Identifier(url.database or ""))
-                )
-    except psycopg.Error as exc:
-        raise AppError(
-            f"The local PostgreSQL database could not be prepared: {exc}",
-            status_code=503,
-            code="backup_unavailable",
-        ) from exc
-
-
 def _read_state(backup_dir: Path) -> dict[str, Any] | None:
     path = backup_dir / STATE_FILE
     if not path.is_file():
@@ -219,14 +206,18 @@ def _write_state(backup_dir: Path, payload: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
-def _latest_dump(backup_dir: Path) -> Path | None:
+def _dump_files(backup_dir: Path) -> list[Path]:
     if not backup_dir.is_dir():
-        return None
-    dumps = sorted(
-        backup_dir.glob(f"{DUMP_PREFIX}*.dump"),
-        key=lambda item: item.stat().st_mtime,
-        reverse=True,
-    )
+        return []
+    files: dict[Path, None] = {}
+    for pattern in DUMP_GLOBS:
+        for path in backup_dir.glob(pattern):
+            files[path] = None
+    return sorted(files, key=lambda item: item.stat().st_mtime, reverse=True)
+
+
+def _latest_dump(backup_dir: Path) -> Path | None:
+    dumps = _dump_files(backup_dir)
     return dumps[0] if dumps else None
 
 
@@ -272,7 +263,7 @@ def _count_rows(target: URL) -> dict[str, int]:
 
 def get_backup_status(db: Session) -> BackupStatus:
     source = _source_url()
-    target = _target_url()
+    target = _backup_url()
     backup_dir = _resolve_backup_dir()
     latest = _latest_dump(backup_dir)
     state = _read_state(backup_dir)
@@ -313,13 +304,13 @@ def get_backup_status(db: Session) -> BackupStatus:
     can_backup = configured and pg_tools_available
     if target is None:
         message = (
-            "Local backup is not configured. Set LOCAL_DATABASE_URL in backend/.env "
-            "to this machine's PostgreSQL database."
+            "Supabase backup is not configured. Set BACKUP_DATABASE_URL in backend/.env "
+            "to the Supabase Session Pooler URL."
         )
     elif _same_database(source, target):
         message = (
-            "The app is already using the local database; no separate local backup "
-            "target is needed."
+            "The backup target points at the main database. Set BACKUP_DATABASE_URL "
+            "to your Supabase database."
         )
     elif not pg_tools_available:
         message = (
@@ -327,13 +318,13 @@ def get_backup_status(db: Session) -> BackupStatus:
             "to the folder containing pg_dump and pg_restore."
         )
     elif running:
-        message = "A local backup is currently running."
+        message = "A Supabase backup is currently running."
     elif latest is None:
-        message = "No local backup has been created yet."
+        message = "No Supabase backup has been created yet."
     elif backup_needed:
-        message = "Changes have been made since the last local backup."
+        message = "Changes have been made since the last Supabase backup."
     else:
-        message = "The local backup is up to date."
+        message = "The Supabase backup is up to date."
 
     return BackupStatus(
         configured=configured,
@@ -356,15 +347,15 @@ def get_backup_status(db: Session) -> BackupStatus:
 
 def create_backup(db: Session) -> BackupResult:
     source = _source_url()
-    target = _target_url()
+    target = _backup_url()
     if target is None:
         raise ValidationError(
-            "Local backup is not configured. Set LOCAL_DATABASE_URL in backend/.env."
+            "Supabase backup is not configured. Set BACKUP_DATABASE_URL in backend/.env."
         )
     if _same_database(source, target):
         raise ValidationError(
-            "LOCAL_DATABASE_URL points at the same database as DATABASE_URL. "
-            "Set it to this machine's local PostgreSQL database."
+            "BACKUP_DATABASE_URL points at the same database as DATABASE_URL. "
+            "Set it to your Supabase database."
         )
     _validate_target(target)
 
@@ -372,14 +363,14 @@ def create_backup(db: Session) -> BackupResult:
     pg_restore = _find_pg_tool("pg_restore")
     if not pg_dump or not pg_restore:
         raise AppError(
-            "pg_dump and pg_restore are required for local backups. Install PostgreSQL "
+            "pg_dump and pg_restore are required for Supabase backups. Install PostgreSQL "
             "or set PG_BIN in backend/.env.",
             status_code=503,
             code="backup_unavailable",
         )
 
     if not BACKUP_LOCK.acquire(blocking=False):
-        raise ConflictError("A local backup is already running.")
+        raise ConflictError("A Supabase backup is already running.")
 
     backup_dir = _resolve_backup_dir()
     temporary: Path | None = None
@@ -407,7 +398,6 @@ def create_backup(db: Session) -> BackupResult:
             source,
             timeout=300,
         )
-        _ensure_database(target)
         _run_pg_tool(
             pg_restore,
             [
@@ -440,18 +430,14 @@ def create_backup(db: Session) -> BackupResult:
             },
         )
 
-        old_dumps = sorted(
-            backup_dir.glob(f"{DUMP_PREFIX}*.dump"),
-            key=lambda item: item.stat().st_mtime,
-            reverse=True,
-        )[settings.backup_keep :]
+        old_dumps = _dump_files(backup_dir)[settings.backup_keep :]
         for old_dump in old_dumps:
             old_dump.unlink(missing_ok=True)
 
         size_bytes = final.stat().st_size
         duration = time.perf_counter() - started
         logger.info(
-            "Local backup completed: %s (%s bytes, %.1fs, %s)",
+            "Supabase backup completed: %s (%s bytes, %.1fs, %s)",
             final.name,
             size_bytes,
             duration,

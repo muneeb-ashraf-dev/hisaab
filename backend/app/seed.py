@@ -4,8 +4,8 @@ Run with:
     uv run python -m app.seed
 
 The command is safe to run repeatedly. It creates the three required accounts,
-their historical baseline, and default categories only when they are missing.
-It never fabricates November transactions.
+their opening balances, and default categories only when they are missing.
+It never fabricates transactions.
 """
 
 from __future__ import annotations
@@ -31,34 +31,29 @@ ACCOUNT_SEEDS = [
         "name": "salary-M",
         "account_type": AccountType.CHECKING,
         "opening_balance": Decimal("27000.00"),
-        "original_funds": Decimal("75000.00"),
-        "historical_usage": Decimal("48000.00"),
-        "notes": "Monthly salary account. PKR 27,000 remains from PKR 75,000.",
+        "original_funds": Decimal("27000.00"),
+        "historical_usage": Decimal("0.00"),
+        "notes": "Monthly salary account. Opening balance at fresh start.",
     },
     {
         "name": "salary-A",
         "account_type": AccountType.CHECKING,
         "opening_balance": Decimal("0.00"),
-        "original_funds": Decimal("63000.00"),
-        "historical_usage": Decimal("63000.00"),
-        "notes": "Monthly salary account. The original PKR 63,000 has been fully used.",
+        "original_funds": Decimal("0.00"),
+        "historical_usage": Decimal("0.00"),
+        "notes": "Monthly salary account. Opening balance at fresh start.",
     },
     {
         "name": "savings",
         "account_type": AccountType.SAVINGS,
-        "opening_balance": Decimal("105000.00"),
+        "opening_balance": Decimal("300000.00"),
         "original_funds": Decimal("300000.00"),
-        "historical_usage": Decimal("195000.00"),
-        "notes": "Long-term savings. PKR 105,000 remains from PKR 300,000.",
+        "historical_usage": Decimal("0.00"),
+        "notes": "Long-term savings. Opening balance at fresh start.",
     },
 ]
 
-USAGE_ITEMS = {
-    "savings": [
-        {"description": "Laptop", "amount": Decimal("125000.00")},
-        {"description": "Committee", "amount": Decimal("70000.00")},
-    ]
-}
+USAGE_ITEMS: dict[str, list[dict[str, object]]] = {}
 
 CATEGORY_SEEDS = [
     # Income
@@ -191,8 +186,8 @@ def seed_baseline(db: Session, accounts: dict[str, Account]) -> bool:
         name="Initial baseline",
         baseline_date=BASELINE_DATE,
         notes=(
-            "Opening position before transaction tracking began. These figures are a "
-            "historical baseline, not November 2026 income or expenses."
+            "Opening position when tracking began. Historical usage is not tracked; "
+            "the opening balances are the fresh starting point."
         ),
     )
     db.add(snapshot)
@@ -213,7 +208,7 @@ def seed_baseline(db: Session, accounts: dict[str, Account]) -> bool:
             db.add(
                 BaselineUsageItem(
                     baseline_account_id=entry.id,
-                    description=usage["description"],
+                    description=str(usage["description"]),
                     amount=usage["amount"],
                     occurred_on=None,
                     notes="Historical usage before tracking began.",
@@ -237,7 +232,7 @@ def run_seed() -> None:
         print(f"  combined opening balance: {opening_total} {settings.currency}")
         actual = db.scalar(select(func.coalesce(func.sum(Account.opening_balance), 0)))
         print(f"  account opening total in database: {Decimal(actual or 0)} {settings.currency}")
-    print("Seed complete. Historical usage is excluded from transaction reports by design.")
+    print("Seed complete. Opening balances are excluded from income and expense reports.")
 
 
 def main() -> None:

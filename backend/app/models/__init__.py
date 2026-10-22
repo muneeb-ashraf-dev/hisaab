@@ -3,6 +3,7 @@ from app.models.audit import AuditLog
 from app.models.baseline import BaselineAccount, BaselineSnapshot, BaselineUsageItem
 from app.models.budget import Budget
 from app.models.category import Category
+from app.models.committee import Committee
 from app.models.enums import (
     AccountType,
     AuditAction,
@@ -33,6 +34,7 @@ __all__ = [
     "BudgetPeriodType",
     "Category",
     "CategoryType",
+    "Committee",
     "ExpenseNature",
     "FinancialGoal",
     "GoalContribution",

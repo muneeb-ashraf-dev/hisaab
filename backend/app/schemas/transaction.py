@@ -16,6 +16,7 @@ class TransactionBase(BaseModel):
     amount: PositiveMoney
     account_id: uuid.UUID
     category_id: uuid.UUID | None = None
+    committee_id: uuid.UUID | None = None
     description: str = Field(min_length=1, max_length=255)
     merchant_or_payee: str | None = Field(default=None, max_length=160)
     payment_method: str | None = Field(default=None, max_length=60)
@@ -41,6 +42,11 @@ class TransactionBase(BaseModel):
             and self.related_transaction_id is not None
         ):
             raise ValueError("only refunds may reference another transaction")
+        if (
+            self.committee_id is not None
+            and self.transaction_type != TransactionType.EXPENSE
+        ):
+            raise ValueError("only expenses may be linked to a committee")
         return self
 
     @model_validator(mode="after")
@@ -63,6 +69,7 @@ class TransactionUpdate(BaseModel):
     amount: PositiveMoney | None = None
     account_id: uuid.UUID | None = None
     category_id: uuid.UUID | None = None
+    committee_id: uuid.UUID | None = None
     description: str | None = Field(default=None, min_length=1, max_length=255)
     merchant_or_payee: str | None = Field(default=None, max_length=160)
     payment_method: str | None = Field(default=None, max_length=60)
@@ -80,6 +87,8 @@ class TransactionRead(ORMModel):
     category_id: uuid.UUID | None
     category_name: str | None = None
     category_color: str | None = None
+    committee_id: uuid.UUID | None = None
+    committee_name: str | None = None
     description: str
     merchant_or_payee: str | None
     payment_method: str | None
@@ -167,6 +176,8 @@ class LedgerEntry(BaseModel):
     category_id: uuid.UUID | None = None
     category_name: str | None = None
     category_color: str | None = None
+    committee_id: uuid.UUID | None = None
+    committee_name: str | None = None
     merchant_or_payee: str | None = None
     payment_method: str | None = None
     notes: str | None = None
