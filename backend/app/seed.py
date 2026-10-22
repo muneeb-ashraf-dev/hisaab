@@ -194,17 +194,22 @@ def seed_baseline(db: Session, accounts: dict[str, Account]) -> bool:
     db.flush()
     for item in ACCOUNT_SEEDS:
         account = accounts[item["name"]]
+        usage_items = USAGE_ITEMS.get(item["name"], [])
+        historical_usage = sum(
+            (Decimal(str(usage["amount"])) for usage in usage_items),
+            Decimal("0.00"),
+        )
         entry = BaselineAccount(
             baseline_id=snapshot.id,
             account_id=account.id,
-            original_funds=item["original_funds"],
-            historical_usage=item["historical_usage"],
-            opening_balance=item["opening_balance"],
+            original_funds=account.opening_balance + historical_usage,
+            historical_usage=historical_usage,
+            opening_balance=account.opening_balance,
             currency=settings.currency,
         )
         db.add(entry)
         db.flush()
-        for usage in USAGE_ITEMS.get(item["name"], []):
+        for usage in usage_items:
             db.add(
                 BaselineUsageItem(
                     baseline_account_id=entry.id,

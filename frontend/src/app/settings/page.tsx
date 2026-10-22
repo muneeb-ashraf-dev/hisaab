@@ -909,7 +909,7 @@ function BaselineTab() {
       <EmptyState
         icon={History}
         title="No baseline configured"
-        description="Run the seed command to create the initial baseline."
+        description="Opening balances can be added in the Accounts tab. A baseline is optional and is only needed to preserve a historical starting snapshot."
       />
     );
   }

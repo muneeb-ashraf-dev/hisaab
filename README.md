@@ -138,7 +138,11 @@ uv run python -m app.seed
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-The seed is safe to run repeatedly and prints the reconciled opening total.
+The seed is safe to run repeatedly and prints the reconciled opening total. It is
+optional: skip it for an empty ledger, or use Settings -> Accounts to set your own
+opening balances after migrating. The seed creates the default categories and,
+when no baseline exists, a baseline snapshot from the current account opening
+balances.
 
 ### 4. Run the frontend
 
